@@ -3,13 +3,16 @@ name: build
 on:
   workflow_dispatch:
   push:
-    branches:
-      - main
-    tags:
-      - 'v*'
+    branches: [main]
+    tags: ['v*']
 
 permissions:
   contents: read
+
+env:
+  NODE_VERSION: '24'
+  ANDROID_API: '35'
+  ANDROID_NDK_VERSION: '27.2.12479018'
 
 jobs:
   windows:
@@ -18,27 +21,25 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
-
-      - name: Setup Node.js 24
+      - name: Setup Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: '24'
+          node-version: ${{ env.NODE_VERSION }}
           package-manager-cache: false
-
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
-
       - name: Cache Rust
         uses: swatinem/rust-cache@v2
         with:
           workspaces: './src-tauri -> target'
-
       - name: Install npm dependencies
         run: npm install --no-audit --no-fund
-
       - name: Build Windows
-        run: npm run tauri build
-
+        run: npm run tauri build -- --ci
+      - name: Verify bundles
+        shell: pwsh
+        run: |
+          Get-ChildItem -Recurse src-tauri/target/release/bundle
       - name: Upload Windows bundles
         uses: actions/upload-artifact@v7
         with:
@@ -49,53 +50,56 @@ jobs:
           if-no-files-found: error
 
   android:
-    name: Android APK
+    name: Android APK (ARM64)
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
         uses: actions/checkout@v7
-
-      - name: Setup Node.js 24
+      - name: Setup Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: '24'
+          node-version: ${{ env.NODE_VERSION }}
           package-manager-cache: false
-
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
-
+          targets: aarch64-linux-android
       - name: Cache Rust
         uses: swatinem/rust-cache@v2
         with:
           workspaces: './src-tauri -> target'
-
-      - name: Setup Java 17
+      - name: Setup Java
         uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
-
       - name: Setup Android SDK
         uses: android-actions/setup-android@v4
-        with:
-          packages: ''
-
       - name: Install Android SDK packages
+        shell: bash
         run: |
-          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0" "ndk;27.2.12479018"
           yes | sdkmanager --licenses >/dev/null || true
-
+          sdkmanager "platform-tools" "platforms;android-${ANDROID_API}" "build-tools;35.0.0" "ndk;${ANDROID_NDK_VERSION}"
+      - name: Configure Android/OpenSSL toolchain
+        shell: bash
+        run: |
+          export NDK="$ANDROID_SDK_ROOT/ndk/${ANDROID_NDK_VERSION}"
+          echo "ANDROID_NDK_ROOT=$NDK" >> "$GITHUB_ENV"
+          echo "$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin" >> "$GITHUB_PATH"
+          echo "CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android30-clang" >> "$GITHUB_ENV"
+          echo "CC_aarch64_linux_android=$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android30-clang" >> "$GITHUB_ENV"
+          echo "AR_aarch64_linux_android=$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar" >> "$GITHUB_ENV"
       - name: Install npm dependencies
         run: npm install --no-audit --no-fund
-
       - name: Build Android APK
         run: npm run android:build
-
+      - name: Verify APK
+        shell: bash
+        run: |
+          find src-tauri/gen/android/app/build/outputs/apk -type f -name '*.apk' -print
       - name: Upload Android APK
         uses: actions/upload-artifact@v7
         with:
-          name: git-folder-sync-android
+          name: git-folder-sync-android-arm64
           path: src-tauri/gen/android/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error

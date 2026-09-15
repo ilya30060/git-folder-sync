@@ -12,8 +12,8 @@ GitHub → repository → Actions → **build** → **Run workflow**.
 ## Tagged build
 
 ```text
-git tag v0.5.0
-git push origin v0.5.0
+git tag v0.5.3
+git push origin v0.5.3
 ```
 
 Workflow автоматически запускается для тега `v*`.

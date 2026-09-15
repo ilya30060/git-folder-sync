@@ -31,7 +31,7 @@
    - `git-folder-sync-windows`;
    - `git-folder-sync-android`.
 
-Workflow также запускается при push тега `v*`, например `v0.5.0`.
+Workflow также запускается при push тега `v*`, например `v0.5.3`.
 
 ### Почему Android artifact — debug APK
 
