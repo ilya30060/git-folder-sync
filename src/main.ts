@@ -52,14 +52,14 @@ async function desktopConfig() {
 async function androidImport() {
   if (!androidFolderUri) throw new Error("Сначала выберите папку Android.");
   const destination = await worktreePath();
-  await invoke("android_import_tree", { uri: androidFolderUri, destination });
+  await invoke("plugin:android-saf|importTree", { uri: androidFolderUri, destination });
   return destination;
 }
 
 async function androidExport() {
   if (!androidFolderUri) throw new Error("Сначала выберите папку Android.");
   const source = await worktreePath();
-  await invoke("android_export_tree", { uri: androidFolderUri, source });
+  await invoke("plugin:android-saf|exportTree", { uri: androidFolderUri, source });
 }
 
 async function run(cmd: string) {
@@ -93,7 +93,8 @@ async function run(cmd: string) {
 $("choose").onclick = async () => {
   try {
     if (isAndroid) {
-      const uri = await invoke<string>("android_pick_directory");
+      const result = await invoke<{ uri: string }>("plugin:android-saf|pickDirectory");
+      const uri = result.uri;
       androidFolderUri = uri;
       localStorage.setItem("androidFolderUri", uri);
       $("folder").value = "Android SAF: выбранная папка";

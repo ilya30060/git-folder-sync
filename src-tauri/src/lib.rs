@@ -6,9 +6,8 @@ use git2::{
     Signature,
 };
 use keyring::Entry;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::path::Path;
-use tauri::{AppHandle, Runtime};
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct Config {
@@ -103,8 +102,8 @@ fn clone_or_initialize(config: Config) -> Result<String, String> {
                 repo.remote("origin", &config.remote_url)?;
                 repo.find_remote("origin")
             })?;
-            if remote.url() != Some(config.remote_url.as_str()) {
-                remote.set_url(&config.remote_url)?;
+            if remote.url()? != config.remote_url {
+                repo.remote_set_url("origin", &config.remote_url)?;
             }
             return Ok("Git-репозиторий уже существует.".into());
         }
@@ -231,78 +230,12 @@ fn repo_status(config: Config) -> Result<String, String> {
     .map_err(|e| format!("{e:#}"))
 }
 
-#[cfg(target_os = "android")]
-#[tauri::command]
-async fn android_pick_directory<R: Runtime>(app: AppHandle<R>) -> Result<String, String> {
-    let value = app
-        .run_mobile_plugin("pickDirectory", ())
-        .map_err(|e| e.to_string())?;
-    value
-        .get("uri")
-        .and_then(|v| v.as_str())
-        .map(str::to_owned)
-        .ok_or_else(|| "Android SAF не вернул URI папки".into())
-}
-
-#[cfg(not(target_os = "android"))]
-#[tauri::command]
-fn android_pick_directory() -> Result<String, String> {
-    Err("Android SAF доступен только на Android".into())
-}
-
-#[cfg(target_os = "android")]
-#[tauri::command]
-async fn android_import_tree<R: Runtime>(
-    app: AppHandle<R>,
-    uri: String,
-    destination: String,
-) -> Result<i32, String> {
-    let value = app
-        .run_mobile_plugin("importTree", serde_json::json!({"uri": uri, "destination": destination}))
-        .map_err(|e| e.to_string())?;
-    value
-        .get("files")
-        .and_then(|v| v.as_i64())
-        .map(|v| v as i32)
-        .ok_or_else(|| "Android SAF не вернул число файлов".into())
-}
-
-#[cfg(not(target_os = "android"))]
-#[tauri::command]
-fn android_import_tree(_uri: String, _destination: String) -> Result<i32, String> {
-    Err("Android SAF доступен только на Android".into())
-}
-
-#[cfg(target_os = "android")]
-#[tauri::command]
-async fn android_export_tree<R: Runtime>(
-    app: AppHandle<R>,
-    uri: String,
-    source: String,
-) -> Result<i32, String> {
-    let value = app
-        .run_mobile_plugin("exportTree", serde_json::json!({"uri": uri, "source": source}))
-        .map_err(|e| e.to_string())?;
-    value
-        .get("files")
-        .and_then(|v| v.as_i64())
-        .map(|v| v as i32)
-        .ok_or_else(|| "Android SAF не вернул число файлов".into())
-}
-
-#[cfg(not(target_os = "android"))]
-#[tauri::command]
-fn android_export_tree(_uri: String, _source: String) -> Result<i32, String> {
-    Err("Android SAF доступен только на Android".into())
-}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let mut builder = tauri::Builder::default().plugin(tauri_plugin_dialog::init());
+    let builder = tauri::Builder::default().plugin(tauri_plugin_dialog::init());
 
     #[cfg(target_os = "android")]
-    {
-        builder = builder.plugin(
+    let builder = builder.plugin(
             tauri::plugin::Builder::new("android-saf")
                 .setup(|_app, api| {
                     api.register_android_plugin("com.gitfoldersync.saf", "AndroidSafPlugin")?;
@@ -310,7 +243,6 @@ pub fn run() {
                 })
                 .build(),
         );
-    }
 
     builder
         .setup(|_app| {
@@ -323,10 +255,7 @@ pub fn run() {
             clone_or_initialize,
             push_repo,
             pull_repo,
-            repo_status,
-            android_pick_directory,
-            android_import_tree,
-            android_export_tree
+            repo_status
         ])
         .run(tauri::generate_context!())
         .expect("error while running application");
