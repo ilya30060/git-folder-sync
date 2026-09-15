@@ -1,0 +1,20 @@
+[package]
+name = "git-folder-sync"
+version = "0.5.0"
+edition = "2021"
+
+[lib]
+name = "git_folder_sync_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2" }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+git2 = { version = "0.21", features = ["https", "vendored-openssl"] }
+anyhow = "1"
+keyring = { version = "4.2.0", default-features = false, features = ["cli", "v1"] }

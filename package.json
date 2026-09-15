@@ -1,0 +1,24 @@
+{
+  "name": "git-folder-sync",
+  "private": true,
+  "version": "0.5.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "tauri": "tauri",
+    "android:init": "tauri android init --ci --skip-targets-install",
+    "android:prepare": "node scripts/prepare-android.mjs",
+    "android:build": "npm run android:init && npm run android:prepare && tauri android build --debug --apk",
+    "android:build:unsigned": "npm run android:init && npm run android:prepare && tauri android build --debug"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.11.1",
+    "@tauri-apps/plugin-dialog": "^2.7.3"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.11.4",
+    "vite": "^7.0.0",
+    "typescript": "^5.0.0"
+  }
+}

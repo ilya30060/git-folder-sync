@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Git Folder Sync</title>
+  <link rel="stylesheet" href="/src/style.css">
+</head>
+<body>
+  <main class="card">
+    <h1>Git Folder Sync</h1>
+    <p class="muted">Синхронизация одной папки с одним GitHub/GitLab репозиторием.</p>
+
+    <label>Git remote URL
+      <input id="url" placeholder="https://github.com/user/repo.git">
+    </label>
+    <div class="row">
+      <label>Username
+        <input id="username" placeholder="user">
+      </label>
+      <label>Token / PAT (не хранится в настройках)
+        <input id="token" type="password" placeholder="••••••••">
+      </label>
+    </div>
+
+    <label>Branch
+      <input id="branch" value="main">
+    </label>
+
+    <label>Локальная папка
+      <div class="row">
+        <input id="folder" readonly placeholder="Выберите папку">
+        <button id="choose">Выбрать</button>
+      </div>
+    </label>
+
+    <div class="actions">
+      <button id="saveCreds">Сохранить токен</button>
+      <button id="clone">Clone / Initialize</button>
+      <button id="pull">Pull</button>
+      <button id="push" class="primary">Push</button>
+      <button id="statusBtn">Status</button>
+      <button id="deleteCreds">Удалить токен</button>
+    </div>
+
+    <pre id="status">Готово.</pre>
+    <section id="conflict" hidden>
+      <h3>Обнаружены конфликты</h3>
+      <p>Автоматическое слияние остановлено, чтобы не потерять файлы.</p>
+      <button id="refreshStatus">Проверить снова</button>
+    </section>
+  </main>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
