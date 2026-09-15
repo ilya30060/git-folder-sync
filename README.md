@@ -50,3 +50,9 @@ Android сначала импортирует выбранную папку. Е�
 ## Безопасность
 
 PAT не хранится в `localStorage` или файлах проекта. Он передаётся в Rust только для работы credential callback libgit2 и хранится через native credential store.
+
+## CI build
+
+GitHub Actions builds Windows and Android without a local Rust/Android toolchain.
+Run **Actions → build → Run workflow**. Artifacts are uploaded as `git-folder-sync-windows`
+and `git-folder-sync-android-arm64`.
