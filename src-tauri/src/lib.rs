@@ -236,7 +236,7 @@ pub fn run() {
 
     #[cfg(target_os = "android")]
     let builder = builder.plugin(
-            tauri::plugin::Builder::new("android-saf")
+            tauri::plugin::Builder::<tauri::Wry, ()>::new("android-saf")
                 .setup(|_app, api| {
                     api.register_android_plugin("com.gitfoldersync.saf", "AndroidSafPlugin")?;
                     Ok(())
