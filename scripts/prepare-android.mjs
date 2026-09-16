@@ -26,4 +26,21 @@ if (!text.includes('androidx.documentfile:documentfile')) {
   fs.writeFileSync(gradle, text);
 }
 
-console.log('Android SAF plugin prepared.');
+const gradleProperties = path.join(gen, 'gradle.properties');
+let props = fs.existsSync(gradleProperties) ? fs.readFileSync(gradleProperties, 'utf8') : '';
+const settings = [
+  'org.gradle.daemon=false',
+  'org.gradle.workers.max=2',
+  'org.gradle.jvmargs=-Xmx3g -Dfile.encoding=UTF-8',
+  'kotlin.incremental=false',
+  'kotlin.compiler.execution.strategy=in-process'
+];
+for (const setting of settings) {
+  const key = setting.split('=')[0];
+  const re = new RegExp(`^${key.replace('.', '\\.')}=.*$`, 'm');
+  if (re.test(props)) props = props.replace(re, setting);
+  else props += (props.endsWith('\n') || props.length === 0 ? '' : '\n') + setting + '\n';
+}
+fs.writeFileSync(gradleProperties, props);
+
+console.log('Android SAF plugin and Gradle build settings prepared.');
