@@ -1,7 +1,7 @@
 {
   "name": "git-folder-sync",
   "private": true,
-  "version": "0.5.10",
+  "version": "0.5.11",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -9,7 +9,7 @@
     "tauri": "tauri",
     "android:init": "tauri android init --ci --skip-targets-install",
     "android:prepare": "node scripts/prepare-android.mjs",
-    "android:build": "npm run android:init && npm run android:prepare && tauri android build --debug --apk --target aarch64",
+    "android:build": "npm run android:init && npm run android:prepare && tauri android build --debug --apk --target aarch64 --split-per-abi",
     "android:build:unsigned": "npm run android:init && npm run android:prepare && tauri android build --debug"
   },
   "dependencies": {

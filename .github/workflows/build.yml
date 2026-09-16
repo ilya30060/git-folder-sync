@@ -83,9 +83,11 @@ jobs:
           set -e
           echo "APK files produced by Tauri:"
           find src-tauri/gen/android/app/build/outputs/apk -type f -name '*.apk' -print
-          APK="$(find src-tauri/gen/android/app/build/outputs/apk -type f -name '*arm64*debug*.apk' -print -quit)"
+          APK="$(find src-tauri/gen/android/app/build/outputs/apk -type f \( -name '*arm64*debug*.apk' -o -name '*aarch64*debug*.apk' \) -print -quit)"
           if [ -z "$APK" ]; then
             echo "ERROR: ARM64 debug APK was not found"
+            echo "Expected a split-per-ABI APK. Full APK tree:"
+            find src-tauri/gen/android/app/build/outputs/apk -type f -print
             exit 1
           fi
           mkdir -p artifacts
