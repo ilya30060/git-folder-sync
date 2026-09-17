@@ -1,11 +1,3 @@
-[default]
-description = "Default permissions for the Android SAF plugin."
-permissions = [
-    "allow-pick-directory",
-    "allow-import-tree",
-    "allow-export-tree",
-]
-
 [[permission]]
 identifier = "allow-pick-directory"
 description = "Allows opening Android's folder picker."
