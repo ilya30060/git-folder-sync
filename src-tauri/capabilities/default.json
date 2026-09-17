@@ -8,6 +8,12 @@
   "permissions": [
     "core:default",
     "dialog:default",
+    "allow-save-credentials",
+    "allow-delete-credentials",
+    "allow-clone-or-initialize",
+    "allow-push-repo",
+    "allow-pull-repo",
+    "allow-repo-status",
     "android-saf:default"
   ]
 }
