@@ -9,3 +9,8 @@ The Kotlin sources are copied into the generated Tauri Android project by `scrip
 - `android_export_tree`
 
 The selected `content://` URI is persisted with `takePersistableUriPermission()`. Git itself never receives the URI. The Git worktree remains in the application's private storage.
+
+
+## v0.5.13
+
+The Android SAF plugin commands are explicitly granted through `src-tauri/permissions/android-saf.toml` and the Android-only capability.

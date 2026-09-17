@@ -1,0 +1,21 @@
+$schema = "../gen/schemas/schema.json"
+
+[[permission]]
+identifier = "allow-pick-directory"
+description = "Allows opening the Android system folder picker."
+commands.allow = ["pickDirectory"]
+
+[[permission]]
+identifier = "allow-import-tree"
+description = "Allows importing files from the selected Android folder."
+commands.allow = ["importTree"]
+
+[[permission]]
+identifier = "allow-export-tree"
+description = "Allows exporting files to the selected Android folder."
+commands.allow = ["exportTree"]
+
+[set]
+identifier = "default"
+description = "Default permissions for Git Folder Sync Android SAF."
+permissions = ["allow-pick-directory", "allow-import-tree", "allow-export-tree"]
