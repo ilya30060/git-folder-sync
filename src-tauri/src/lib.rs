@@ -245,10 +245,6 @@ pub fn run() {
         );
 
     builder
-        .setup(|_app| {
-            keyring::cli::use_native_store(false).map_err(|e| anyhow!("Не удалось инициализировать защищённое хранилище: {e}"))?;
-            Ok(())
-        })
         .invoke_handler(tauri::generate_handler![
             save_credentials,
             delete_credentials,

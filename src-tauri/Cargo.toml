@@ -1,6 +1,6 @@
 [package]
 name = "git-folder-sync"
-version = "0.5.7"
+version = "0.5.12"
 edition = "2021"
 
 [lib]
@@ -17,4 +17,4 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 git2 = { version = "0.21", features = ["https", "vendored-openssl"] }
 anyhow = "1"
-keyring = { version = "4.2.0", default-features = false, features = ["cli", "v1"] }
+keyring = { version = "4.2.0", default-features = false, features = ["v1", "android-native-keyring-store"] }

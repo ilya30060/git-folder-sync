@@ -1,6 +1,6 @@
 # Credential storage
 
-The application stores the Git PAT through the Rust `keyring` crate and initializes its native store at startup.
+The application stores the Git PAT through the Rust `keyring` crate using the platform-native credential store when credentials are accessed.
 
 - Windows: native Windows credential store.
 - Android: native Android keyring store backed by the Android secure storage facilities.

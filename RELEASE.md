@@ -1,9 +1,9 @@
-# Git Folder Sync v0.5.9
+# Git Folder Sync v0.5.12
 
-Android-only CI release.
+Android startup crash fix.
 
 Fixes:
-- Replaced obsolete Android `Plugin.onActivityResult` override with Tauri 2 `@ActivityCallback` + `startActivityForResult`.
-- Keeps SAF directory permissions using `takePersistableUriPermission`.
-- Windows CI remains disabled.
-- Android build remains ARM64 (`aarch64`).
+- Removed early `keyring::cli::use_native_store(false)` initialization.
+- Enabled `keyring`'s `android-native-keyring-store` backend.
+- Credential storage is accessed only when credentials are explicitly saved or retrieved.
+- Bumped application/package version to 0.5.12.
