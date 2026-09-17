@@ -8,8 +8,6 @@
   "permissions": [
     "core:default",
     "dialog:default",
-    "android-saf:allow-pick-directory",
-    "android-saf:allow-import-tree",
-    "android-saf:allow-export-tree"
+    "android-saf:default"
   ]
 }

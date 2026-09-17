@@ -1,0 +1,16 @@
+"$schema" = "schemas/schema.json"
+
+[[permission]]
+identifier = "allow-pick-directory"
+description = "Allows opening Android's folder picker."
+commands.allow = ["pickDirectory"]
+
+[[permission]]
+identifier = "allow-import-tree"
+description = "Allows importing files from a persisted Android SAF tree."
+commands.allow = ["importTree"]
+
+[[permission]]
+identifier = "allow-export-tree"
+description = "Allows exporting files to a persisted Android SAF tree."
+commands.allow = ["exportTree"]
