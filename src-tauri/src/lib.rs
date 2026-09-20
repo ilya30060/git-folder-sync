@@ -80,8 +80,14 @@ fn ensure_android_ca_bundle() -> Result<PathBuf> {
         let bundle_path = std::env::temp_dir().join("git-folder-sync-android-ca-bundle.pem");
         fs::write(&bundle_path, bundle)
             .map_err(|e| format!("не удалось создать CA bundle {bundle_path:?}: {e}"))?;
-        git2::opts::set_ssl_cert_file(&bundle_path)
-            .map_err(|e| format!("не удалось настроить CA bundle для HTTPS: {e}"))?;
+        // SAFETY: libgit2 documents global option setters as requiring external
+        // synchronization. This function is invoked from `run()` before the
+        // Tauri event loop starts and before any application worker can issue
+        // git operations, so no other libgit2 operation can race this change.
+        unsafe {
+            git2::opts::set_ssl_cert_file(&bundle_path)
+                .map_err(|e| format!("не удалось настроить CA bundle для HTTPS: {e}"))?;
+        }
         Ok(bundle_path)
     }) {
         Ok(path) => Ok(path.clone()),
@@ -165,7 +171,6 @@ fn open_repo(cfg: &Config) -> Result<Repository> {
 
 #[tauri::command]
 fn clone_or_initialize(config: Config) -> Result<String, String> {
-    ensure_android_ca_bundle().map_err(|e| format!("{e:#}"))?;
     let config = effective_config(config).map_err(|e| format!("{e:#}"))?;
     (|| -> Result<String> {
         let p = Path::new(&config.folder);
@@ -173,7 +178,7 @@ fn clone_or_initialize(config: Config) -> Result<String, String> {
 
         if p.join(".git").exists() {
             let repo = Repository::open(p)?;
-            let mut remote = repo.find_remote("origin").or_else(|_| {
+            let remote = repo.find_remote("origin").or_else(|_| {
                 repo.remote("origin", &config.remote_url)?;
                 repo.find_remote("origin")
             })?;
@@ -208,7 +213,6 @@ fn working_tree_dirty(repo: &Repository) -> Result<bool> {
 
 #[tauri::command]
 fn push_repo(config: Config) -> Result<String, String> {
-    ensure_android_ca_bundle().map_err(|e| format!("{e:#}"))?;
     let config = effective_config(config).map_err(|e| format!("{e:#}"))?;
     (|| -> Result<String> {
         let repo = open_repo(&config)?;
@@ -256,7 +260,6 @@ fn push_repo(config: Config) -> Result<String, String> {
 
 #[tauri::command]
 fn pull_repo(config: Config) -> Result<String, String> {
-    ensure_android_ca_bundle().map_err(|e| format!("{e:#}"))?;
     let config = effective_config(config).map_err(|e| format!("{e:#}"))?;
     (|| -> Result<String> {
         let repo = open_repo(&config)?;
@@ -309,6 +312,11 @@ fn repo_status(config: Config) -> Result<String, String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(target_os = "android")]
+    {
+        ensure_android_ca_bundle().expect("failed to initialize Android CA bundle for HTTPS");
+    }
+
     let builder = tauri::Builder::default().plugin(tauri_plugin_dialog::init());
 
     #[cfg(target_os = "android")]
