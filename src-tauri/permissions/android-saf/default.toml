@@ -1,6 +1,7 @@
 "$schema" = "schemas/schema.json"
 
-[default]
+[[permission]]
+identifier = "default"
 description = "Default permissions for the Android SAF plugin."
 permissions = [
     "allow-pick-directory",

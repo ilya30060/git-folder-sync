@@ -7,7 +7,11 @@ use git2::{
 };
 use keyring::Entry;
 use serde::Deserialize;
-use std::path::Path;
+use std::{
+    fs,
+    path::{Path, PathBuf},
+    sync::OnceLock,
+};
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct Config {
@@ -23,12 +27,81 @@ fn credential_key(remote_url: &str, username: &str) -> String {
     format!("{}:{}", remote_url, username)
 }
 
+fn ensure_keyring_store() -> Result<()> {
+    static INIT: OnceLock<std::result::Result<(), String>> = OnceLock::new();
+    match INIT.get_or_init(|| {
+        keyring::cli::use_native_store(false)
+            .map_err(|e| format!("не удалось инициализировать системное хранилище ключей: {e:#}"))
+    }) {
+        Ok(()) => Ok(()),
+        Err(message) => Err(anyhow!(message.clone())),
+    }
+}
+
+#[cfg(target_os = "android")]
+fn ensure_android_ca_bundle() -> Result<PathBuf> {
+    static INIT: OnceLock<std::result::Result<PathBuf, String>> = OnceLock::new();
+    match INIT.get_or_init(|| {
+        let candidates = [
+            "/system/etc/security/cacerts",
+            "/apex/com.android.conscrypt/cacerts",
+        ];
+        let source = candidates
+            .iter()
+            .map(Path::new)
+            .find(|p| p.is_dir())
+            .ok_or_else(|| "системное хранилище CA-сертификатов Android не найдено".to_string())?;
+
+        let mut files: Vec<PathBuf> = fs::read_dir(source)
+            .map_err(|e| format!("не удалось прочитать {source:?}: {e}"))?
+            .filter_map(|entry| entry.ok().map(|e| e.path()))
+            .filter(|p| {
+                p.extension()
+                    .and_then(|e| e.to_str())
+                    .and_then(|e| e.parse::<u32>().ok())
+                    .is_some()
+            })
+            .collect();
+        files.sort();
+        if files.is_empty() {
+            return Err(format!("в {source:?} не найдено CA-сертификатов"));
+        }
+
+        let mut bundle = Vec::new();
+        for file in files {
+            let data = fs::read(&file)
+                .map_err(|e| format!("не удалось прочитать CA-сертификат {file:?}: {e}"))?;
+            bundle.extend_from_slice(&data);
+            if !data.ends_with(b"\n") {
+                bundle.push(b'\n');
+            }
+        }
+
+        let bundle_path = std::env::temp_dir().join("git-folder-sync-android-ca-bundle.pem");
+        fs::write(&bundle_path, bundle)
+            .map_err(|e| format!("не удалось создать CA bundle {bundle_path:?}: {e}"))?;
+        git2::opts::set_ssl_cert_file(&bundle_path)
+            .map_err(|e| format!("не удалось настроить CA bundle для HTTPS: {e}"))?;
+        Ok(bundle_path)
+    }) {
+        Ok(path) => Ok(path.clone()),
+        Err(message) => Err(anyhow!(message.clone())),
+    }
+}
+
+#[cfg(not(target_os = "android"))]
+fn ensure_android_ca_bundle() -> Result<PathBuf> {
+    Ok(PathBuf::new())
+}
+
 fn stored_token(remote_url: &str, username: &str) -> Result<String> {
+    ensure_keyring_store()?;
     let entry = Entry::new("git-folder-sync", &credential_key(remote_url, username))?;
     entry.get_password().context("PAT не найден в защищённом хранилище")
 }
 
 fn save_token(remote_url: &str, username: &str, token: &str) -> Result<()> {
+    ensure_keyring_store()?;
     if token.trim().is_empty() {
         return Err(anyhow!("Токен пустой"));
     }
@@ -59,6 +132,7 @@ fn save_credentials(config: Config) -> Result<String, String> {
 
 #[tauri::command]
 fn delete_credentials(config: Config) -> Result<String, String> {
+    ensure_keyring_store().map_err(|e| format!("{e:#}"))?;
     let entry = Entry::new("git-folder-sync", &credential_key(&config.remote_url, &config.username))
         .map_err(|e| format!("{e:#}"))?;
     match entry.delete_credential() {
@@ -91,6 +165,7 @@ fn open_repo(cfg: &Config) -> Result<Repository> {
 
 #[tauri::command]
 fn clone_or_initialize(config: Config) -> Result<String, String> {
+    ensure_android_ca_bundle().map_err(|e| format!("{e:#}"))?;
     let config = effective_config(config).map_err(|e| format!("{e:#}"))?;
     (|| -> Result<String> {
         let p = Path::new(&config.folder);
@@ -133,6 +208,7 @@ fn working_tree_dirty(repo: &Repository) -> Result<bool> {
 
 #[tauri::command]
 fn push_repo(config: Config) -> Result<String, String> {
+    ensure_android_ca_bundle().map_err(|e| format!("{e:#}"))?;
     let config = effective_config(config).map_err(|e| format!("{e:#}"))?;
     (|| -> Result<String> {
         let repo = open_repo(&config)?;
@@ -180,6 +256,7 @@ fn push_repo(config: Config) -> Result<String, String> {
 
 #[tauri::command]
 fn pull_repo(config: Config) -> Result<String, String> {
+    ensure_android_ca_bundle().map_err(|e| format!("{e:#}"))?;
     let config = effective_config(config).map_err(|e| format!("{e:#}"))?;
     (|| -> Result<String> {
         let repo = open_repo(&config)?;
