@@ -7,11 +7,11 @@ use git2::{
 };
 use keyring::Entry;
 use serde::Deserialize;
-use std::{
-    fs,
-    path::{Path, PathBuf},
-    sync::OnceLock,
-};
+use std::{fs, path::Path, sync::OnceLock};
+#[cfg(target_os = "android")]
+use std::path::PathBuf;
+#[cfg(target_os = "android")]
+use tauri::Manager;
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct Config {
@@ -39,65 +39,63 @@ fn ensure_keyring_store() -> Result<()> {
 }
 
 #[cfg(target_os = "android")]
-fn ensure_android_ca_bundle() -> Result<PathBuf> {
-    static INIT: OnceLock<std::result::Result<PathBuf, String>> = OnceLock::new();
-    match INIT.get_or_init(|| {
-        let candidates = [
-            "/system/etc/security/cacerts",
-            "/apex/com.android.conscrypt/cacerts",
-        ];
-        let source = candidates
-            .iter()
-            .map(Path::new)
-            .find(|p| p.is_dir())
-            .ok_or_else(|| "системное хранилище CA-сертификатов Android не найдено".to_string())?;
+static ANDROID_CA_BUNDLE_INIT: OnceLock<std::result::Result<(), String>> = OnceLock::new();
 
-        let mut files: Vec<PathBuf> = fs::read_dir(source)
-            .map_err(|e| format!("не удалось прочитать {source:?}: {e}"))?
-            .filter_map(|entry| entry.ok().map(|e| e.path()))
-            .filter(|p| {
-                p.extension()
-                    .and_then(|e| e.to_str())
-                    .and_then(|e| e.parse::<u32>().ok())
-                    .is_some()
-            })
-            .collect();
-        files.sort();
-        if files.is_empty() {
-            return Err(format!("в {source:?} не найдено CA-сертификатов"));
-        }
+#[cfg(target_os = "android")]
+fn build_android_ca_bundle(cache_dir: &Path) -> Result<PathBuf> {
+    let candidates = [
+        "/system/etc/security/cacerts",
+        "/apex/com.android.conscrypt/cacerts",
+    ];
+    let source = candidates
+        .iter()
+        .map(Path::new)
+        .find(|p| p.is_dir())
+        .ok_or_else(|| anyhow!("системное хранилище CA-сертификатов Android не найдено"))?;
 
-        let mut bundle = Vec::new();
-        for file in files {
-            let data = fs::read(&file)
-                .map_err(|e| format!("не удалось прочитать CA-сертификат {file:?}: {e}"))?;
-            bundle.extend_from_slice(&data);
-            if !data.ends_with(b"\n") {
-                bundle.push(b'\n');
-            }
-        }
+    let mut files: Vec<PathBuf> = fs::read_dir(source)
+        .with_context(|| format!("не удалось прочитать {source:?}"))?
+        .filter_map(|entry| entry.ok().map(|e| e.path()))
+        .filter(|p| {
+            p.extension()
+                .and_then(|e| e.to_str())
+                .and_then(|e| e.parse::<u32>().ok())
+                .is_some()
+        })
+        .collect();
+    files.sort();
+    if files.is_empty() {
+        return Err(anyhow!("в {source:?} не найдено CA-сертификатов"));
+    }
 
-        let bundle_path = std::env::temp_dir().join("git-folder-sync-android-ca-bundle.pem");
-        fs::write(&bundle_path, bundle)
-            .map_err(|e| format!("не удалось создать CA bundle {bundle_path:?}: {e}"))?;
-        // SAFETY: libgit2 documents global option setters as requiring external
-        // synchronization. This function is invoked from `run()` before the
-        // Tauri event loop starts and before any application worker can issue
-        // git operations, so no other libgit2 operation can race this change.
-        unsafe {
-            git2::opts::set_ssl_cert_file(&bundle_path)
-                .map_err(|e| format!("не удалось настроить CA bundle для HTTPS: {e}"))?;
+    let mut bundle = Vec::new();
+    for file in files {
+        let data = fs::read(&file)
+            .with_context(|| format!("не удалось прочитать CA-сертификат {file:?}"))?;
+        bundle.extend_from_slice(&data);
+        if !data.ends_with(b"\n") {
+            bundle.push(b'\n');
         }
-        Ok(bundle_path)
-    }) {
-        Ok(path) => Ok(path.clone()),
-        Err(message) => Err(anyhow!(message.clone())),
+    }
+
+    let bundle_path = cache_dir.join("git-folder-sync-android-ca-bundle.pem");
+    fs::write(&bundle_path, bundle)
+        .with_context(|| format!("не удалось создать CA bundle {bundle_path:?}"))?;
+    Ok(bundle_path)
+}
+
+#[cfg(target_os = "android")]
+fn ensure_android_ca_bundle_ready() -> Result<()> {
+    match ANDROID_CA_BUNDLE_INIT.get() {
+        Some(Ok(())) => Ok(()),
+        Some(Err(message)) => Err(anyhow!(message.clone())),
+        None => Err(anyhow!("CA bundle Android ещё не был инициализирован")),
     }
 }
 
 #[cfg(not(target_os = "android"))]
-fn ensure_android_ca_bundle() -> Result<PathBuf> {
-    Ok(PathBuf::new())
+fn ensure_android_ca_bundle_ready() -> Result<()> {
+    Ok(())
 }
 
 fn stored_token(remote_url: &str, username: &str) -> Result<String> {
@@ -172,6 +170,7 @@ fn open_repo(cfg: &Config) -> Result<Repository> {
 #[tauri::command]
 fn clone_or_initialize(config: Config) -> Result<String, String> {
     let config = effective_config(config).map_err(|e| format!("{e:#}"))?;
+    ensure_android_ca_bundle_ready().map_err(|e| format!("{e:#}"))?;
     (|| -> Result<String> {
         let p = Path::new(&config.folder);
         std::fs::create_dir_all(p)?;
@@ -214,6 +213,7 @@ fn working_tree_dirty(repo: &Repository) -> Result<bool> {
 #[tauri::command]
 fn push_repo(config: Config) -> Result<String, String> {
     let config = effective_config(config).map_err(|e| format!("{e:#}"))?;
+    ensure_android_ca_bundle_ready().map_err(|e| format!("{e:#}"))?;
     (|| -> Result<String> {
         let repo = open_repo(&config)?;
         let branch_ref = format!("refs/heads/{}", config.branch);
@@ -261,6 +261,7 @@ fn push_repo(config: Config) -> Result<String, String> {
 #[tauri::command]
 fn pull_repo(config: Config) -> Result<String, String> {
     let config = effective_config(config).map_err(|e| format!("{e:#}"))?;
+    ensure_android_ca_bundle_ready().map_err(|e| format!("{e:#}"))?;
     (|| -> Result<String> {
         let repo = open_repo(&config)?;
         if working_tree_dirty(&repo)? {
@@ -312,11 +313,6 @@ fn repo_status(config: Config) -> Result<String, String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    #[cfg(target_os = "android")]
-    {
-        ensure_android_ca_bundle().expect("failed to initialize Android CA bundle for HTTPS");
-    }
-
     let builder = tauri::Builder::default().plugin(tauri_plugin_dialog::init());
 
     #[cfg(target_os = "android")]
@@ -330,6 +326,32 @@ pub fn run() {
         );
 
     builder
+        .setup(|app| {
+            #[cfg(target_os = "android")]
+            {
+                let initialization: std::result::Result<(), String> = (|| {
+                    let cache_dir = app
+                        .path()
+                        .app_cache_dir()
+                        .map_err(|e| format!("не удалось получить приватный каталог кэша приложения: {e}"))?;
+                    fs::create_dir_all(&cache_dir).map_err(|e| {
+                        format!("не удалось создать приватный каталог кэша {cache_dir:?}: {e}")
+                    })?;
+
+                    let bundle_path = build_android_ca_bundle(&cache_dir)
+                        .map_err(|e| format!("{e:#}"))?;
+                    // SAFETY: this libgit2 global option is set during Tauri setup,
+                    // before the event loop and before any app Git command can run.
+                    unsafe {
+                        git2::opts::set_ssl_cert_file(&bundle_path)
+                            .map_err(|e| format!("не удалось настроить CA bundle для HTTPS: {e}"))?;
+                    }
+                    Ok(())
+                })();
+                let _ = ANDROID_CA_BUNDLE_INIT.set(initialization);
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             save_credentials,
             delete_credentials,
