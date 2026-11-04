@@ -6,6 +6,7 @@ use git2::{
     Signature,
 };
 use keyring::Entry;
+use openssl::x509::X509;
 use serde::Deserialize;
 use std::{fs, path::Path, sync::OnceLock};
 #[cfg(target_os = "android")]
@@ -68,14 +69,25 @@ fn build_android_ca_bundle(cache_dir: &Path) -> Result<PathBuf> {
         return Err(anyhow!("в {source:?} не найдено CA-сертификатов"));
     }
 
+    // Android stores certificates as DER files named by subject hash (for example, *.0).
+    // libgit2/OpenSSL expects a PEM bundle, so decode and re-encode every certificate.
     let mut bundle = Vec::new();
+    let mut converted = 0usize;
     for file in files {
         let data = fs::read(&file)
             .with_context(|| format!("не удалось прочитать CA-сертификат {file:?}"))?;
-        bundle.extend_from_slice(&data);
-        if !data.ends_with(b"\n") {
-            bundle.push(b'\n');
-        }
+        let certificate = X509::from_der(&data)
+            .or_else(|_| X509::from_pem(&data))
+            .with_context(|| format!("не удалось разобрать CA-сертификат {file:?}"))?;
+        bundle.extend_from_slice(
+            &certificate
+                .to_pem()
+                .with_context(|| format!("не удалось преобразовать CA-сертификат {file:?} в PEM"))?,
+        );
+        converted += 1;
+    }
+    if converted == 0 {
+        return Err(anyhow!("не удалось преобразовать ни одного CA-сертификата"));
     }
 
     let bundle_path = cache_dir.join("git-folder-sync-android-ca-bundle.pem");
