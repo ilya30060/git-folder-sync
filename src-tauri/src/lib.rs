@@ -10,6 +10,8 @@ use serde::Deserialize;
 use std::{fs, path::Path, sync::OnceLock};
 #[cfg(target_os = "android")]
 use std::path::PathBuf;
+#[cfg(target_os = "android")]
+use tauri::Manager;
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct Config {
@@ -41,7 +43,7 @@ static ANDROID_CA_BUNDLE_INIT: OnceLock<std::result::Result<(), String>> = OnceL
 
 #[cfg(target_os = "android")]
 fn build_android_ca_directory(cache_dir: &Path) -> Result<PathBuf> {
-    use openssl::x509::X509;
+    use openssl::{sha::sha1, x509::X509};
     use std::collections::HashMap;
 
     let candidates = [
@@ -83,7 +85,12 @@ fn build_android_ca_directory(cache_dir: &Path) -> Result<PathBuf> {
         let certificate = X509::from_der(&data)
             .or_else(|_| X509::from_pem(&data))
             .with_context(|| format!("не удалось разобрать CA-сертификат {file:?}"))?;
-        let hash = certificate.subject_name().hash();
+        // OpenSSL subject hashes use the first four SHA-1 bytes in little-endian order.
+        // Hash the DER-encoded X.509 subject name to create the expected lookup filename.
+        let subject_der = certificate.subject_name().to_der()
+            .with_context(|| format!("не удалось закодировать имя CA-сертификата {file:?}"))?;
+        let digest = sha1(&subject_der);
+        let hash = u32::from_le_bytes([digest[0], digest[1], digest[2], digest[3]]);
         let index = hash_indices.entry(hash).or_insert(0);
         let destination = target.join(format!("{hash:08x}.{index}"));
         *index += 1;
