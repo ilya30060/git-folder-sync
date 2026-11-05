@@ -30,8 +30,11 @@ fn credential_key(remote_url: &str, username: &str) -> String {
 fn ensure_keyring_store() -> Result<()> {
     static INIT: OnceLock<std::result::Result<(), String>> = OnceLock::new();
     match INIT.get_or_init(|| {
-        keyring::cli::use_native_store(false)
-            .map_err(|e| format!("не удалось инициализировать системное хранилище ключей: {e:#}"))
+        #[cfg(target_os = "android")]
+        let result = keyring::cli::use_android_native_store(&std::collections::HashMap::new());
+        #[cfg(not(target_os = "android"))]
+        let result = keyring::cli::use_native_store(false);
+        result.map_err(|e| format!("не удалось инициализировать системное хранилище ключей: {e:#}"))
     }) {
         Ok(()) => Ok(()),
         Err(message) => Err(anyhow!(message.clone())),
@@ -43,7 +46,7 @@ static ANDROID_CA_BUNDLE_INIT: OnceLock<std::result::Result<(), String>> = OnceL
 
 #[cfg(target_os = "android")]
 fn build_android_ca_directory(cache_dir: &Path) -> Result<PathBuf> {
-    use openssl::{sha::sha1, x509::X509};
+    use openssl::x509::X509;
     use std::collections::HashMap;
 
     let candidates = [
@@ -85,12 +88,8 @@ fn build_android_ca_directory(cache_dir: &Path) -> Result<PathBuf> {
         let certificate = X509::from_der(&data)
             .or_else(|_| X509::from_pem(&data))
             .with_context(|| format!("не удалось разобрать CA-сертификат {file:?}"))?;
-        // OpenSSL subject hashes use the first four SHA-1 bytes in little-endian order.
-        // Hash the DER-encoded X.509 subject name to create the expected lookup filename.
-        let subject_der = certificate.subject_name().to_der()
-            .with_context(|| format!("не удалось закодировать имя CA-сертификата {file:?}"))?;
-        let digest = sha1(&subject_der);
-        let hash = u32::from_le_bytes([digest[0], digest[1], digest[2], digest[3]]);
+        // Use OpenSSL's canonical X509 subject-name hash, exactly as its CA directory lookup does.
+        let hash = certificate.subject_name_hash();
         let index = hash_indices.entry(hash).or_insert(0);
         let destination = target.join(format!("{hash:08x}.{index}"));
         *index += 1;
