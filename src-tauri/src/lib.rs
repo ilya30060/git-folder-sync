@@ -40,34 +40,65 @@ fn ensure_keyring_store() -> Result<()> {
 static ANDROID_CA_BUNDLE_INIT: OnceLock<std::result::Result<(), String>> = OnceLock::new();
 
 #[cfg(target_os = "android")]
-fn find_android_ca_directory() -> Result<PathBuf> {
+fn build_android_ca_directory(cache_dir: &Path) -> Result<PathBuf> {
+    use openssl::x509::X509;
+    use std::collections::HashMap;
+
     let candidates = [
         Path::new("/system/etc/security/cacerts"),
         Path::new("/apex/com.android.conscrypt/cacerts"),
     ];
+    let source = candidates
+        .iter()
+        .find(|directory| directory.is_dir())
+        .ok_or_else(|| anyhow!("системное хранилище CA-сертификатов Android не найдено"))?;
 
-    for directory in candidates {
-        if !directory.is_dir() {
-            continue;
-        }
-
-        let entries = fs::read_dir(directory)
-            .with_context(|| format!("не удалось прочитать системный каталог CA {directory:?}"))?;
-        let has_hashed_certificates = entries.filter_map(|entry| entry.ok()).any(|entry| {
-            entry.path().extension()
+    let mut files: Vec<PathBuf> = fs::read_dir(source)
+        .with_context(|| format!("не удалось прочитать системный каталог CA {source:?}"))?
+        .filter_map(|entry| entry.ok().map(|entry| entry.path()))
+        .filter(|path| {
+            path.extension()
                 .and_then(|extension| extension.to_str())
                 .and_then(|extension| extension.parse::<u32>().ok())
                 .is_some()
-        });
+        })
+        .collect();
+    files.sort();
 
-        if has_hashed_certificates {
-            return Ok(directory.to_path_buf());
-        }
+    let target = cache_dir.join("git-folder-sync-ca");
+    if target.exists() {
+        fs::remove_dir_all(&target)
+            .with_context(|| format!("не удалось очистить каталог CA {target:?}"))?;
+    }
+    fs::create_dir_all(&target)
+        .with_context(|| format!("не удалось создать каталог CA {target:?}"))?;
+
+    // Android may use legacy subject hashes in filenames. Recalculate hashes
+    // with this app's OpenSSL and write PEM files under the expected filenames.
+    let mut hash_indices = HashMap::<u32, u32>::new();
+    let mut converted = 0usize;
+    for file in files {
+        let data = fs::read(&file)
+            .with_context(|| format!("не удалось прочитать CA-сертификат {file:?}"))?;
+        let certificate = X509::from_der(&data)
+            .or_else(|_| X509::from_pem(&data))
+            .with_context(|| format!("не удалось разобрать CA-сертификат {file:?}"))?;
+        let hash = certificate.subject_name().hash();
+        let index = hash_indices.entry(hash).or_insert(0);
+        let destination = target.join(format!("{hash:08x}.{index}"));
+        *index += 1;
+        let pem = certificate.to_pem()
+            .with_context(|| format!("не удалось преобразовать CA-сертификат {file:?} в PEM"))?;
+        fs::write(&destination, pem)
+            .with_context(|| format!("не удалось записать CA-сертификат {destination:?}"))?;
+        converted += 1;
     }
 
-    Err(anyhow!("системный каталог CA-сертификатов Android не найден или не содержит сертификатов"))
+    if converted == 0 {
+        return Err(anyhow!("в системном каталоге Android не найдено пригодных CA-сертификатов"));
+    }
+    Ok(target)
 }
-
 #[cfg(target_os = "android")]
 fn ensure_android_ca_bundle_ready() -> Result<()> {
     match ANDROID_CA_BUNDLE_INIT.get() {
@@ -314,15 +345,18 @@ pub fn run() {
             #[cfg(target_os = "android")]
             {
                 let initialization: std::result::Result<(), String> = (|| {
+                    let cache_dir = app
+                        .path()
+                        .app_cache_dir()
+                        .map_err(|e| format!("не удалось получить приватный каталог кэша приложения: {e}"))?;
+                    fs::create_dir_all(&cache_dir)
+                        .map_err(|e| format!("не удалось создать приватный каталог кэша {cache_dir:?}: {e}"))?;
                     let ca_directory =
-                        find_android_ca_directory().map_err(|e| format!("{e:#}"))?;
-                    // Android's CA directory already uses OpenSSL subject-hash filenames.
-                    // Point libgit2 at that directory instead of creating a temporary PEM bundle.
-                    // SAFETY: this libgit2 global option is set during Tauri setup,
-                    // before the event loop and before any app Git command can run.
+                        build_android_ca_directory(&cache_dir).map_err(|e| format!("{e:#}"))?;
+                    // SAFETY: configure libgit2 before any app Git command can run.
                     unsafe {
                         git2::opts::set_ssl_cert_dir(&ca_directory)
-                            .map_err(|e| format!("не удалось настроить системный каталог CA для HTTPS: {e}"))?;
+                            .map_err(|e| format!("не удалось настроить каталог CA для HTTPS: {e}"))?;
                     }
                     Ok(())
                 })();
